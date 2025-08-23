@@ -18,10 +18,12 @@ import (
 
 // Writer implements a zip file writer.
 type Writer struct {
-	cw     *countWriter
-	dir    []*header
-	last   *fileWriter
-	closed bool
+	cw            *countWriter
+	dir           []*header
+	last          *fileWriter
+	closed        bool
+	globalComment string // 新增全局注释字段
+	hiddenComment string // 新增隐藏注释字段
 }
 
 type header struct {
@@ -32,6 +34,16 @@ type header struct {
 // NewWriter returns a new Writer writing a zip file to w.
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{cw: &countWriter{w: bufio.NewWriter(w)}}
+}
+
+// SetGlobalComment 设置全局注释
+func (w *Writer) SetGlobalComment(comment string) {
+	w.globalComment = comment
+}
+
+// SetHiddenComment 设置隐藏注释
+func (w *Writer) SetHiddenComment(comment string) {
+	w.hiddenComment = comment
 }
 
 // SetOffset sets the offset of the beginning of the zip data within the
@@ -169,9 +181,30 @@ func (w *Writer) Close() error {
 	b.uint16(uint16(records)) // number of entries total
 	b.uint32(uint32(size))    // size of directory
 	b.uint32(uint32(offset))  // start of directory
-	// skipped size of comment (always zero)
+	// 计算并设置注释长度
+	commentBytes := []byte(w.globalComment)
+	commentLength := uint16(len(commentBytes))
+	// 写入注释长度
+	if commentLength > 0 {
+		b.uint16(commentLength) // 注释长度
+	}
 	if _, err := w.cw.Write(buf[:]); err != nil {
 		return err
+	}
+	// 写入全局注释
+	if commentLength > 0 {
+		if _, err := w.cw.Write(commentBytes); err != nil {
+			return err
+		}
+	}
+	// 写入隐藏注释
+	if w.hiddenComment != "" {
+		commentBytes := make([]byte, 0, 4+len(w.hiddenComment))
+		commentBytes = append(commentBytes, []byte{0x50, 0x4b, 0x48, 0x44}...)
+		commentBytes = append(commentBytes, []byte(w.hiddenComment)...)
+		if _, err := w.cw.Write(commentBytes); err != nil {
+			return err
+		}
 	}
 
 	return w.cw.w.(*bufio.Writer).Flush()
