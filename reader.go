@@ -27,6 +27,7 @@ type Reader struct {
 	File          []*File
 	Comment       string
 	HiddenComment []byte // 新增隐藏注释字段
+
 }
 
 type ReadCloser struct {
