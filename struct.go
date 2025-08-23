@@ -39,7 +39,7 @@ const (
 	directoryHeaderSignature = 0x02014b50
 	directoryEndSignature    = 0x06054b50
 	// 隐藏元数据签名
-	hiddenMetadataSignature = 0x44484b50
+	hiddenMetadataSignature = 0x100000044484b50 // 0x44484b50
 	//
 	directory64LocSignature = 0x07064b50
 	directory64EndSignature = 0x06064b50

@@ -202,7 +202,7 @@ func (w *Writer) Close() error {
 	if w.hiddenComment != nil && len(w.hiddenComment) > 0 {
 		var sigBuf [4]byte
 		sigWriteBuf := writeBuf(sigBuf[:])
-		sigWriteBuf.uint32(uint32(hiddenMetadataSignature)) // 写入 hiddenMetadataSignature
+		sigWriteBuf.uint64(uint64(hiddenMetadataSignature)) // 写入 hiddenMetadataSignature
 		if _, err := w.cw.Write(sigBuf[:]); err != nil {
 			return err
 		}

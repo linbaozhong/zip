@@ -126,8 +126,8 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 	}
 
 	// 将 hiddenMetadataSignature 转换为字节切片
-	marker := make([]byte, 4)
-	binary.LittleEndian.PutUint32(marker, hiddenMetadataSignature)
+	marker := make([]byte, 8)
+	binary.LittleEndian.PutUint64(marker, hiddenMetadataSignature)
 
 	// 读取当前位置之后的全部内容
 	remainingData := make([]byte, remaining)

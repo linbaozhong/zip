@@ -6,6 +6,8 @@ package zip
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -201,4 +203,10 @@ func BenchmarkCompressedZipGarbage(b *testing.B) {
 		}
 		zw.Close()
 	}
+}
+
+func TestInt64(t *testing.T) {
+	b := []byte{0x50, 0x4b, 0x48, 0x44, 0x00, 0x00, 0x00, 0x01}
+	value := binary.LittleEndian.Uint64(b)
+	fmt.Printf("转换结果: 0x%x\n", value)
 }
