@@ -6,6 +6,7 @@ package zip
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -22,9 +23,10 @@ var (
 )
 
 type Reader struct {
-	r       io.ReaderAt
-	File    []*File
-	Comment string
+	r             io.ReaderAt
+	File          []*File
+	Comment       string
+	HiddenComment []byte // 新增隐藏注释字段
 }
 
 type ReadCloser struct {
@@ -85,7 +87,7 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 	z.File = make([]*File, 0, end.directoryRecords)
 	z.Comment = end.comment
 	rs := io.NewSectionReader(r, 0, size)
-	if _, err = rs.Seek(int64(end.directoryOffset), os.SEEK_SET); err != nil {
+	if _, err = rs.Seek(int64(end.directoryOffset), io.SeekStart); err != nil {
 		return err
 	}
 	buf := bufio.NewReader(rs)
@@ -109,6 +111,23 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 		// Return the readDirectoryHeader error if we read
 		// the wrong number of directory entries.
 		return err
+	}
+
+	// 定位到中央目录结束标记之后
+	_, err = rs.Seek(int64(end.directoryOffset)+int64(end.commentLen), io.SeekStart)
+	if err != nil {
+		return err
+	}
+	// 查找隐藏注释标识
+	marker := []byte{0x50, 0x4b, 0x48, 0x44}
+	markerBuf := make([]byte, len(marker))
+	if _, err := io.ReadFull(rs, markerBuf); err == nil && bytes.Equal(markerBuf, marker) {
+		// 读取隐藏注释
+		remaining := size - rs.Size()
+		commentBytes := make([]byte, remaining)
+		if n, err := io.ReadFull(rs, commentBytes); err == nil {
+			z.HiddenComment = commentBytes[:n]
+		}
 	}
 	return nil
 }

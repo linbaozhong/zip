@@ -23,7 +23,7 @@ type Writer struct {
 	last          *fileWriter
 	closed        bool
 	globalComment string // 新增全局注释字段
-	hiddenComment string // 新增隐藏注释字段
+	hiddenComment []byte // 新增隐藏注释字段
 }
 
 type header struct {
@@ -42,7 +42,7 @@ func (w *Writer) SetGlobalComment(comment string) {
 }
 
 // SetHiddenComment 设置隐藏注释
-func (w *Writer) SetHiddenComment(comment string) {
+func (w *Writer) SetHiddenComment(comment []byte) {
 	w.hiddenComment = comment
 }
 
@@ -198,10 +198,10 @@ func (w *Writer) Close() error {
 		}
 	}
 	// 写入隐藏注释
-	if w.hiddenComment != "" {
+	if w.hiddenComment != nil && len(w.hiddenComment) > 0 {
 		commentBytes := make([]byte, 0, 4+len(w.hiddenComment))
 		commentBytes = append(commentBytes, []byte{0x50, 0x4b, 0x48, 0x44}...)
-		commentBytes = append(commentBytes, []byte(w.hiddenComment)...)
+		commentBytes = append(commentBytes, w.hiddenComment...)
 		if _, err := w.cw.Write(commentBytes); err != nil {
 			return err
 		}
