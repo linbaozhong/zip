@@ -115,20 +115,33 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 	}
 
 	// 定位到中央目录结束标记之后
-	_, err = rs.Seek(int64(end.directoryOffset)+int64(end.commentLen), io.SeekStart)
+	currentOffset, err := rs.Seek(int64(end.directoryOffset)+int64(end.commentLen), io.SeekStart)
 	if err != nil {
 		return err
 	}
-	// 查找隐藏注释标识
-	marker := []byte{0x50, 0x4b, 0x48, 0x44}
-	markerBuf := make([]byte, len(marker))
-	if _, err := io.ReadFull(rs, markerBuf); err == nil && bytes.Equal(markerBuf, marker) {
-		// 读取隐藏注释
-		remaining := size - rs.Size()
-		commentBytes := make([]byte, remaining)
-		if n, err := io.ReadFull(rs, commentBytes); err == nil {
-			z.HiddenComment = commentBytes[:n]
-		}
+	// 计算剩余需要读取的内容长度
+	remaining := size - currentOffset
+	if remaining <= 0 {
+		return nil
+	}
+
+	// 将 hiddenMetadataSignature 转换为字节切片
+	marker := make([]byte, 4)
+	binary.LittleEndian.PutUint32(marker, hiddenMetadataSignature)
+
+	// 读取当前位置之后的全部内容
+	remainingData := make([]byte, remaining)
+	if _, err := io.ReadFull(rs, remainingData); err != nil {
+		return err
+	}
+
+	// 使用 bytes.Index 查找 marker 的位置
+	markerIndex := bytes.Index(remainingData, marker)
+	if markerIndex != -1 {
+		// 计算隐藏注释的起始位置
+		commentStart := markerIndex + len(marker)
+		// 提取隐藏注释内容
+		z.HiddenComment = remainingData[commentStart:]
 	}
 	return nil
 }

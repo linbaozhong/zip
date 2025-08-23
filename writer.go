@@ -188,6 +188,7 @@ func (w *Writer) Close() error {
 	if commentLength > 0 {
 		b.uint16(commentLength) // 注释长度
 	}
+
 	if _, err := w.cw.Write(buf[:]); err != nil {
 		return err
 	}
@@ -197,12 +198,19 @@ func (w *Writer) Close() error {
 			return err
 		}
 	}
+	// 写入 hiddenMetadataSignature
+	if w.hiddenComment != nil && len(w.hiddenComment) > 0 {
+		var sigBuf [4]byte
+		sigWriteBuf := writeBuf(sigBuf[:])
+		sigWriteBuf.uint32(uint32(hiddenMetadataSignature)) // 写入 hiddenMetadataSignature
+		if _, err := w.cw.Write(sigBuf[:]); err != nil {
+			return err
+		}
+	}
+
 	// 写入隐藏注释
 	if w.hiddenComment != nil && len(w.hiddenComment) > 0 {
-		commentBytes := make([]byte, 0, 4+len(w.hiddenComment))
-		commentBytes = append(commentBytes, []byte{0x50, 0x4b, 0x48, 0x44}...)
-		commentBytes = append(commentBytes, w.hiddenComment...)
-		if _, err := w.cw.Write(commentBytes); err != nil {
+		if _, err := w.cw.Write(w.hiddenComment); err != nil {
 			return err
 		}
 	}
