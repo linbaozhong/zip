@@ -38,16 +38,19 @@ const (
 	fileHeaderSignature      = 0x04034b50
 	directoryHeaderSignature = 0x02014b50
 	directoryEndSignature    = 0x06054b50
-	directory64LocSignature  = 0x07064b50
-	directory64EndSignature  = 0x06064b50
-	dataDescriptorSignature  = 0x08074b50 // de-facto standard; required by OS X Finder
-	fileHeaderLen            = 30         // + filename + extra
-	directoryHeaderLen       = 46         // + filename + extra + comment
-	directoryEndLen          = 22         // + comment
-	dataDescriptorLen        = 16         // four uint32: descriptor signature, crc32, compressed size, size
-	dataDescriptor64Len      = 24         // descriptor with 8 byte sizes
-	directory64LocLen        = 20         //
-	directory64EndLen        = 56         // + extra
+	// 隐藏元数据签名 PKHDSNOW
+	hiddenMetadataSignature = 0x574f4e5344484b50 // 0x44484b50
+	//
+	directory64LocSignature = 0x07064b50
+	directory64EndSignature = 0x06064b50
+	dataDescriptorSignature = 0x08074b50 // de-facto standard; required by OS X Finder
+	fileHeaderLen           = 30         // + filename + extra
+	directoryHeaderLen      = 46         // + filename + extra + comment
+	directoryEndLen         = 22         // + comment
+	dataDescriptorLen       = 16         // four uint32: descriptor signature, crc32, compressed size, size
+	dataDescriptor64Len     = 24         // descriptor with 8 byte sizes
+	directory64LocLen       = 20         //
+	directory64EndLen       = 56         // + extra
 
 	// Constants for the first byte in CreatorVersion
 	creatorFAT    = 0

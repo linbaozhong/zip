@@ -6,6 +6,7 @@ package zip
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -22,9 +23,11 @@ var (
 )
 
 type Reader struct {
-	r       io.ReaderAt
-	File    []*File
-	Comment string
+	r             io.ReaderAt
+	File          []*File
+	Comment       string
+	HiddenComment []byte // 新增隐藏注释字段
+
 }
 
 type ReadCloser struct {
@@ -85,7 +88,7 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 	z.File = make([]*File, 0, end.directoryRecords)
 	z.Comment = end.comment
 	rs := io.NewSectionReader(r, 0, size)
-	if _, err = rs.Seek(int64(end.directoryOffset), os.SEEK_SET); err != nil {
+	if _, err = rs.Seek(int64(end.directoryOffset), io.SeekStart); err != nil {
 		return err
 	}
 	buf := bufio.NewReader(rs)
@@ -109,6 +112,36 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 		// Return the readDirectoryHeader error if we read
 		// the wrong number of directory entries.
 		return err
+	}
+
+	// 定位到中央目录结束标记之后
+	currentOffset, err := rs.Seek(int64(end.directoryOffset)+int64(end.commentLen), io.SeekStart)
+	if err != nil {
+		return err
+	}
+	// 计算剩余需要读取的内容长度
+	remaining := size - currentOffset
+	if remaining <= 0 {
+		return nil
+	}
+
+	// 将 hiddenMetadataSignature 转换为字节切片
+	marker := make([]byte, 8)
+	binary.LittleEndian.PutUint64(marker, hiddenMetadataSignature)
+
+	// 读取当前位置之后的全部内容
+	remainingData := make([]byte, remaining)
+	if _, err := io.ReadFull(rs, remainingData); err != nil {
+		return err
+	}
+
+	// 使用 bytes.Index 查找 marker 的位置
+	markerIndex := bytes.Index(remainingData, marker)
+	if markerIndex != -1 {
+		// 计算隐藏注释的起始位置
+		commentStart := markerIndex + len(marker)
+		// 提取隐藏注释内容
+		z.HiddenComment = remainingData[commentStart:]
 	}
 	return nil
 }

@@ -6,6 +6,8 @@ package zip
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -68,7 +70,8 @@ func TestWriter(t *testing.T) {
 	// write a zip file
 	buf := new(bytes.Buffer)
 	w := NewWriter(buf)
-
+	w.SetGlobalComment("这是全局注释")
+	w.SetHiddenComment([]byte("这是加密数据"))
 	for _, wt := range writeTests {
 		testCreate(t, w, &wt)
 	}
@@ -76,12 +79,16 @@ func TestWriter(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
+	//t.Log([]byte{0x50, 0x4b, 0x48, 0x44})
+	//t.Log("zip:", buf.Bytes())
 
 	// read it back
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("comment:", r.Comment)
+	t.Log("data:", string(r.HiddenComment))
 	for i, wt := range writeTests {
 		testReadFile(t, r.File[i], &wt)
 	}
@@ -196,4 +203,10 @@ func BenchmarkCompressedZipGarbage(b *testing.B) {
 		}
 		zw.Close()
 	}
+}
+
+func TestInt64(t *testing.T) {
+	b := []byte{0x50, 0x4b, 0x48, 0x44, 0x00, 0x00, 0x00, 0x01}
+	value := binary.LittleEndian.Uint64(b)
+	fmt.Printf("转换结果: 0x%x\n", value)
 }
