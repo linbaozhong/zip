@@ -360,6 +360,9 @@ func (w *fileWriter) Write(p []byte) (int, error) {
 	if w.closed {
 		return 0, errors.New("zip: write to closed file")
 	}
+	if w.raw {
+		return w.zipw.Write(p)
+	}
 	w.crc32.Write(p)
 	return w.rawCount.Write(p)
 }
@@ -369,6 +372,9 @@ func (w *fileWriter) close() error {
 		return errors.New("zip: file closed twice")
 	}
 	w.closed = true
+	if w.raw {
+		return w.writeDataDescriptor()
+	}
 	if err := w.comp.Close(); err != nil {
 		return err
 	}
@@ -419,6 +425,35 @@ func (w *fileWriter) close() error {
 	} else {
 		b.uint32(fh.CompressedSize)
 		b.uint32(fh.UncompressedSize)
+	}
+	_, err := w.zipw.Write(buf)
+	return err
+}
+
+func (w *fileWriter) writeDataDescriptor() error {
+	if !w.hasDataDescriptor() {
+		return nil
+	}
+	// Write data descriptor. This is more complicated than one would
+	// think, see e.g. comments in zipfile.c:putextended() and
+	// https://bugs.openjdk.org/browse/JDK-7073588.
+	// The approach here is to write 8 byte sizes if needed without
+	// adding a zip64 extra in the local header (too late anyway).
+	var buf []byte
+	if w.isZip64() {
+		buf = make([]byte, dataDescriptor64Len)
+	} else {
+		buf = make([]byte, dataDescriptorLen)
+	}
+	b := writeBuf(buf)
+	b.uint32(dataDescriptorSignature) // de-facto standard, required by OS X
+	b.uint32(w.CRC32)
+	if w.isZip64() {
+		b.uint64(w.CompressedSize64)
+		b.uint64(w.UncompressedSize64)
+	} else {
+		b.uint32(w.CompressedSize)
+		b.uint32(w.UncompressedSize)
 	}
 	_, err := w.zipw.Write(buf)
 	return err
