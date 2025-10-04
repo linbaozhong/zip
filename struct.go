@@ -258,6 +258,10 @@ func (fh *FileHeader) isZip64() bool {
 	return fh.CompressedSize64 > uint32max || fh.UncompressedSize64 > uint32max
 }
 
+func (h *FileHeader) hasDataDescriptor() bool {
+	return h.Flags&0x8 != 0
+}
+
 func msdosModeToFileMode(m uint32) (mode os.FileMode) {
 	if m&msdosDir != 0 {
 		mode = os.ModeDir | 0777

@@ -538,3 +538,16 @@ func (b *readBuf) uint64() uint64 {
 	*b = (*b)[8:]
 	return v
 }
+
+///////////////////////
+
+// OpenRaw returns a [Reader] that provides access to the [File]'s contents without
+// decompression.
+func (f *File) OpenRaw() (io.Reader, error) {
+	bodyOffset, err := f.findBodyOffset()
+	if err != nil {
+		return nil, err
+	}
+	r := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, int64(f.CompressedSize64))
+	return r, nil
+}

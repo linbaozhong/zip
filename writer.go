@@ -11,6 +11,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"strings"
 )
 
 // TODO(adg): support zip file comments
@@ -29,6 +30,7 @@ type Writer struct {
 type header struct {
 	*FileHeader
 	offset uint64
+	raw    bool
 }
 
 // NewWriter returns a new Writer writing a zip file to w.
@@ -241,14 +243,8 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 // call to Create, CreateHeader, or Close. The provided FileHeader fh
 // must not be modified after a call to CreateHeader.
 func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
-	if w.last != nil && !w.last.closed {
-		if err := w.last.close(); err != nil {
-			return nil, err
-		}
-	}
-	if len(w.dir) > 0 && w.dir[len(w.dir)-1].FileHeader == fh {
-		// See https://golang.org/issue/11144 confusion.
-		return nil, errors.New("archive/zip: invalid duplicate FileHeader")
+	if err := w.prepare(fh); err != nil {
+		return nil, err
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor
@@ -301,7 +297,7 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	w.dir = append(w.dir, h)
 	fw.header = h
 
-	if err := writeHeader(w.cw, fh); err != nil {
+	if err := writeHeader(w.cw, h); err != nil {
 		return nil, err
 	}
 
@@ -309,7 +305,7 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	return fw, nil
 }
 
-func writeHeader(w io.Writer, h *FileHeader) error {
+func writeHeader(w io.Writer, h *header) error {
 	var buf [fileHeaderLen]byte
 	b := writeBuf(buf[:])
 	b.uint32(uint32(fileHeaderSignature))
@@ -318,9 +314,20 @@ func writeHeader(w io.Writer, h *FileHeader) error {
 	b.uint16(h.Method)
 	b.uint16(h.ModifiedTime)
 	b.uint16(h.ModifiedDate)
-	b.uint32(0) // since we are writing a data descriptor crc32,
-	b.uint32(0) // compressed size,
-	b.uint32(0) // and uncompressed size should be zero
+	// In raw mode (caller does the compression), the values are either
+	// written here or in the trailing data descriptor based on the header
+	// flags.
+	if h.raw && !h.hasDataDescriptor() {
+		b.uint32(h.CRC32)
+		b.uint32(uint32(min(h.CompressedSize64, uint32max)))
+		b.uint32(uint32(min(h.UncompressedSize64, uint32max)))
+	} else {
+		// When this package handle the compression, these values are
+		// always written to the trailing data descriptor.
+		b.uint32(0) // crc32
+		b.uint32(0) // compressed size
+		b.uint32(0) // uncompressed size
+	}
 	b.uint16(uint16(len(h.Name)))
 	b.uint16(uint16(len(h.Extra)))
 	if _, err := w.Write(buf[:]); err != nil {
@@ -452,4 +459,89 @@ func (b *writeBuf) uint32(v uint32) {
 func (b *writeBuf) uint64(v uint64) {
 	binary.LittleEndian.PutUint64(*b, v)
 	*b = (*b)[8:]
+}
+
+//////////////////
+
+// prepare performs the bookkeeping operations required at the start of
+// CreateHeader and CreateRaw.
+func (w *Writer) prepare(fh *FileHeader) error {
+	if w.last != nil && !w.last.closed {
+		if err := w.last.close(); err != nil {
+			return err
+		}
+	}
+	if len(w.dir) > 0 && w.dir[len(w.dir)-1].FileHeader == fh {
+		// See https://golang.org/issue/11144 confusion.
+		return errors.New("archive/zip: invalid duplicate FileHeader")
+	}
+	return nil
+}
+
+type dirWriter struct{}
+
+func (dirWriter) Write(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
+	return 0, errors.New("zip: write to directory")
+}
+
+// CreateRaw adds a file to the zip archive using the provided [FileHeader] and
+// returns a [Writer] to which the file contents should be written. The file's
+// contents must be written to the io.Writer before the next call to [Writer.Create],
+// [Writer.CreateHeader], [Writer.CreateRaw], or [Writer.Close].
+//
+// In contrast to [Writer.CreateHeader], the bytes passed to Writer are not compressed.
+//
+// CreateRaw's argument is stored in w. If the argument is a pointer to the embedded
+// [FileHeader] in a [File] obtained from a [Reader] created from in-memory data,
+// then w will refer to all of that memory.
+func (w *Writer) CreateRaw(fh *FileHeader) (io.Writer, error) {
+	if err := w.prepare(fh); err != nil {
+		return nil, err
+	}
+
+	fh.CompressedSize = uint32(min(fh.CompressedSize64, uint32max))
+	fh.UncompressedSize = uint32(min(fh.UncompressedSize64, uint32max))
+
+	h := &header{
+		FileHeader: fh,
+		offset:     uint64(w.cw.count),
+		raw:        true,
+	}
+	w.dir = append(w.dir, h)
+	if err := writeHeader(w.cw, h); err != nil {
+		return nil, err
+	}
+
+	if strings.HasSuffix(fh.Name, "/") {
+		w.last = nil
+		return dirWriter{}, nil
+	}
+
+	fw := &fileWriter{
+		header: h,
+		zipw:   w.cw,
+	}
+	w.last = fw
+	return fw, nil
+}
+
+// Copy copies the file f (obtained from a [Reader]) into w. It copies the raw
+// form directly bypassing decompression, compression, and validation.
+func (w *Writer) Copy(f *File) error {
+	r, err := f.OpenRaw()
+	if err != nil {
+		return err
+	}
+	// Copy the FileHeader so w doesn't store a pointer to the data
+	// of f's entire archive. See #65499.
+	fh := f.FileHeader
+	fw, err := w.CreateRaw(&fh)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(fw, r)
+	return err
 }
