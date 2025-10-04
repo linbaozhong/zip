@@ -576,7 +576,6 @@ func (f *File) OpenRaw() (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("OpenRaw:", f.Name, f.headerOffset, bodyOffset, f.FileHeader.CompressedSize64)
 	r := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, int64(f.CompressedSize64))
 	return r, nil
 }
