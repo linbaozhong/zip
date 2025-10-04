@@ -14,6 +14,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"strings"
 )
 
 var (
@@ -171,6 +172,22 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	if err != nil {
 		return
 	}
+	if strings.HasSuffix(f.Name, "/") {
+		// The ZIP specification (APPNOTE.TXT) specifies that directories, which
+		// are technically zero-byte files, must not have any associated file
+		// data. We previously tried failing here if f.CompressedSize64 != 0,
+		// but it turns out that a number of implementations (namely, the Java
+		// jar tool) don't properly set the storage method on directories
+		// resulting in a file with compressed size > 0 but uncompressed size ==
+		// 0. We still want to fail when a directory has associated uncompressed
+		// data, but we are tolerant of cases where the uncompressed size is
+		// zero but compressed size is not.
+		if f.UncompressedSize64 != 0 {
+			return &dirReader{ErrFormat}, nil
+		} else {
+			return &dirReader{io.EOF}, nil
+		}
+	}
 	// If f is encrypted, CompressedSize64 includes salt, pwvv, encrypted data,
 	// and auth code lengths
 	size := int64(f.CompressedSize64)
@@ -178,7 +195,6 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	rr := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, size)
 	// check for encryption
 	if f.IsEncrypted() {
-
 		if f.ae == 0 {
 			if r, err = ZipCryptoDecryptor(rr, f.password()); err != nil {
 				return
@@ -210,6 +226,18 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 		desr: desr,
 	}
 	return
+}
+
+type dirReader struct {
+	err error
+}
+
+func (r *dirReader) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+func (r *dirReader) Close() error {
+	return nil
 }
 
 type checksumReader struct {
@@ -548,6 +576,7 @@ func (f *File) OpenRaw() (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("OpenRaw:", f.Name, f.headerOffset, bodyOffset, f.FileHeader.CompressedSize64)
 	r := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, int64(f.CompressedSize64))
 	return r, nil
 }

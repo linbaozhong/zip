@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -82,6 +83,8 @@ func (w *Writer) Close() error {
 	// write central directory
 	start := w.cw.count
 	for _, h := range w.dir {
+		fmt.Println("write directory header", h.Name, h.offset, h.FileHeader.CompressedSize64)
+
 		var buf [directoryHeaderLen]byte
 		b := writeBuf(buf[:])
 		b.uint32(uint32(directoryHeaderSignature))
