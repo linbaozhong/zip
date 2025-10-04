@@ -8,17 +8,16 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
 	"strings"
 )
 
-// TODO(adg): support zip file comments
-// TODO(adg): support specifying deflate level
+// TODO(adg): 支持zip文件注释
+// TODO(adg): 支持指定deflate压缩级别
 
-// Writer implements a zip file writer.
+// Writer 实现了一个zip文件写入器。
 type Writer struct {
 	cw            *countWriter
 	dir           []*header
@@ -34,7 +33,7 @@ type header struct {
 	raw    bool
 }
 
-// NewWriter returns a new Writer writing a zip file to w.
+// NewWriter 返回一个新的Writer，用于向w写入zip文件。
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{cw: &countWriter{w: bufio.NewWriter(w)}}
 }
@@ -49,10 +48,9 @@ func (w *Writer) SetHiddenComment(comment []byte) {
 	w.hiddenComment = comment
 }
 
-// SetOffset sets the offset of the beginning of the zip data within the
-// underlying writer. It should be used when the zip data is appended to an
-// existing file, such as a binary executable.
-// It must be called before any data is written.
+// SetOffset 设置zip数据在底层写入器中的起始偏移量。
+// 当zip数据附加到现有文件（如二进制可执行文件）时应使用此方法。
+// 必须在写入任何数据之前调用。
 func (w *Writer) SetOffset(n int64) {
 	if w.cw.count != 0 {
 		panic("zip: SetOffset called after data was written")
@@ -60,14 +58,14 @@ func (w *Writer) SetOffset(n int64) {
 	w.cw.count = n
 }
 
-// Flush flushes any buffered data to the underlying writer.
-// Calling Flush is not normally necessary; calling Close is sufficient.
+// Flush 将任何缓冲数据刷新到底层写入器。
+// 通常不需要调用Flush；调用Close就足够了。
 func (w *Writer) Flush() error {
 	return w.cw.w.(*bufio.Writer).Flush()
 }
 
-// Close finishes writing the zip file by writing the central directory.
-// It does not (and can not) close the underlying writer.
+// Close 通过写入中央目录完成zip文件的写入。
+// 它不会（也不能）关闭底层写入器。
 func (w *Writer) Close() error {
 	if w.last != nil && !w.last.closed {
 		if err := w.last.close(); err != nil {
@@ -80,11 +78,9 @@ func (w *Writer) Close() error {
 	}
 	w.closed = true
 
-	// write central directory
+	// 写入中央目录
 	start := w.cw.count
 	for _, h := range w.dir {
-		fmt.Println("write directory header", h.Name, h.offset, h.FileHeader.CompressedSize64)
-
 		var buf [directoryHeaderLen]byte
 		b := writeBuf(buf[:])
 		b.uint32(uint32(directoryHeaderSignature))
@@ -96,13 +92,12 @@ func (w *Writer) Close() error {
 		b.uint16(h.ModifiedDate)
 		b.uint32(h.CRC32)
 		if h.isZip64() || h.offset > uint32max {
-			// the file needs a zip64 header. store maxint in both
-			// 32 bit size fields (and offset later) to signal that the
-			// zip64 extra header should be used.
-			b.uint32(uint32max) // compressed size
-			b.uint32(uint32max) // uncompressed size
+			// 该文件需要zip64头。在两个32位大小字段中存储maxint
+			// （稍后还有偏移量）来表示应使用zip64额外头。
+			b.uint32(uint32max) // 压缩大小
+			b.uint32(uint32max) // 未压缩大小
 
-			// append a zip64 extra block to Extra
+			// 向Extra追加zip64额外块
 			var buf [28]byte // 2x uint16 + 3x uint64
 			eb := writeBuf(buf[:])
 			eb.uint16(zip64ExtraId)
@@ -118,7 +113,7 @@ func (w *Writer) Close() error {
 		b.uint16(uint16(len(h.Name)))
 		b.uint16(uint16(len(h.Extra)))
 		b.uint16(uint16(len(h.Comment)))
-		b = b[4:] // skip disk number start and internal file attr (2x uint16)
+		b = b[4:] // 跳过磁盘号起始和内部文件属性（2x uint16）
 		b.uint32(h.ExternalAttrs)
 		if h.offset > uint32max {
 			b.uint32(uint32max)
@@ -148,44 +143,43 @@ func (w *Writer) Close() error {
 		var buf [directory64EndLen + directory64LocLen]byte
 		b := writeBuf(buf[:])
 
-		// zip64 end of central directory record
+		// zip64中央目录结束记录
 		b.uint32(directory64EndSignature)
-		b.uint64(directory64EndLen - 12) // length minus signature (uint32) and length fields (uint64)
-		b.uint16(zipVersion45)           // version made by
-		b.uint16(zipVersion45)           // version needed to extract
-		b.uint32(0)                      // number of this disk
-		b.uint32(0)                      // number of the disk with the start of the central directory
-		b.uint64(records)                // total number of entries in the central directory on this disk
-		b.uint64(records)                // total number of entries in the central directory
-		b.uint64(size)                   // size of the central directory
-		b.uint64(offset)                 // offset of start of central directory with respect to the starting disk number
+		b.uint64(directory64EndLen - 12) // 长度减去签名（uint32）和长度字段（uint64）
+		b.uint16(zipVersion45)           // 创建版本
+		b.uint16(zipVersion45)           // 提取所需版本
+		b.uint32(0)                      // 此磁盘号
+		b.uint32(0)                      // 包含中央目录起始的磁盘号
+		b.uint64(records)                // 此磁盘上中央目录中的条目总数
+		b.uint64(records)                // 中央目录中的条目总数
+		b.uint64(size)                   // 中央目录大小
+		b.uint64(offset)                 // 中央目录起始相对于起始磁盘号的偏移量
 
-		// zip64 end of central directory locator
+		// zip64中央目录结束定位器
 		b.uint32(directory64LocSignature)
-		b.uint32(0)           // number of the disk with the start of the zip64 end of central directory
-		b.uint64(uint64(end)) // relative offset of the zip64 end of central directory record
-		b.uint32(1)           // total number of disks
+		b.uint32(0)           // 包含zip64中央目录结束记录的磁盘号
+		b.uint64(uint64(end)) // zip64中央目录结束记录的相对偏移量
+		b.uint32(1)           // 磁盘总数
 
 		if _, err := w.cw.Write(buf[:]); err != nil {
 			return err
 		}
 
-		// store max values in the regular end record to signal that
-		// that the zip64 values should be used instead
+		// 在常规结束记录中存储最大值，以表示应使用zip64值
 		records = uint16max
 		size = uint32max
 		offset = uint32max
 	}
 
-	// write end record
+	// 写入结束记录
 	var buf [directoryEndLen]byte
 	b := writeBuf(buf[:])
 	b.uint32(uint32(directoryEndSignature))
-	b = b[4:]                 // skip over disk number and first disk number (2x uint16)
-	b.uint16(uint16(records)) // number of entries this disk
-	b.uint16(uint16(records)) // number of entries total
-	b.uint32(uint32(size))    // size of directory
-	b.uint32(uint32(offset))  // start of directory
+	b = b[4:]                 // 跳过磁盘号和第一个磁盘号（2x uint16）
+	b.uint16(uint16(records)) // 此磁盘上的条目数
+	b.uint16(uint16(records)) // 总条目数
+	b.uint32(uint32(size))    // 目录大小
+	b.uint32(uint32(offset))  // 目录起始位置
 	// 计算并设置注释长度
 	commentBytes := []byte(w.globalComment)
 	commentLength := uint16(len(commentBytes))
@@ -227,13 +221,11 @@ func (w *Writer) IsClosed() bool {
 	return w.closed
 }
 
-// Create adds a file to the zip file using the provided name.
-// It returns a Writer to which the file contents should be written.
-// The name must be a relative path: it must not start with a drive
-// letter (e.g. C:) or leading slash, and only forward slashes are
-// allowed.
-// The file's contents must be written to the io.Writer before the next
-// call to Create, CreateHeader, or Close.
+// Create 使用提供的名称向zip文件添加一个文件。
+// 它返回一个Writer，文件内容应写入其中。
+// 名称必须是相对路径：不能以驱动器字母（例如C:）或前导斜杠开头，
+// 并且只允许使用正斜杠。
+// 在下一次调用Create、CreateHeader或Close之前，必须将文件内容写入io.Writer。
 func (w *Writer) Create(name string) (io.Writer, error) {
 	header := &FileHeader{
 		Name:   name,
@@ -242,22 +234,20 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 	return w.CreateHeader(header)
 }
 
-// CreateHeader adds a file to the zip file using the provided FileHeader
-// for the file metadata.
-// It returns a Writer to which the file contents should be written.
+// CreateHeader 使用提供的FileHeader为文件元数据向zip文件添加一个文件。
+// 它返回一个Writer，文件内容应写入其中。
 //
-// The file's contents must be written to the io.Writer before the next
-// call to Create, CreateHeader, or Close. The provided FileHeader fh
-// must not be modified after a call to CreateHeader.
+// 在下一次调用Create、CreateHeader或Close之前，必须将文件内容写入io.Writer。
+// 提供的FileHeader fh在调用CreateHeader后不得修改。
 func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	if err := w.prepare(fh); err != nil {
 		return nil, err
 	}
 
-	fh.Flags |= 0x8 // we will write a data descriptor
-	// TODO(alex): Look at spec and see if these need to be changed
+	fh.Flags |= 0x8 // 我们将写入数据描述符
+	// TODO(alex): 查看规范，看看在使用加密时是否需要更改这些值。
 	// when using encryption.
-	fh.CreatorVersion = fh.CreatorVersion&0xff00 | zipVersion20 // preserve compatibility byte
+	fh.CreatorVersion = fh.CreatorVersion&0xff00 | zipVersion20 // 保留兼容性字节
 	fh.ReaderVersion = zipVersion20
 
 	fw := &fileWriter{
@@ -265,12 +255,12 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 		compCount: &countWriter{w: w.cw},
 		crc32:     crc32.NewIEEE(),
 	}
-	// Get the compressor before possibly changing Method to 99 due to password
+	// 在可能由于密码而将Method更改为99之前获取压缩器
 	comp := compressor(fh.Method)
 	if comp == nil {
 		return nil, ErrAlgorithm
 	}
-	// check for password
+	// 检查密码
 	var sw io.Writer = fw.compCount
 	if fh.password != nil {
 		if fh.encryption == StandardEncryption {
@@ -280,9 +270,9 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 			}
 			sw = ew
 		} else {
-			// we have a password and need to encrypt.
+			// 我们有密码需要加密。
 			fh.writeWinZipExtra()
-			fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
+			fh.Method = 99 // 可以更改，因为我们已经获取了压缩器并写入了额外信息
 			ew, err := newEncryptionWriter(sw, fh.password, fw, fh.aesStrength)
 			if err != nil {
 				return nil, err
