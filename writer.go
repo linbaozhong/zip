@@ -272,7 +272,7 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 		} else {
 			// 我们有密码需要加密。
 			fh.writeWinZipExtra()
-			fh.Method = 99 // 可以更改，因为我们已经获取了压缩器并写入了额外信息
+			fh.Method = WinZipAes // 可以更改，因为我们已经获取了压缩器并写入了额外信息
 			ew, err := newEncryptionWriter(sw, fh.password, fw, fh.aesStrength)
 			if err != nil {
 				return nil, err
@@ -570,6 +570,10 @@ func (w *Writer) Copy(f *File) error {
 	// Copy the FileHeader so w doesn't store a pointer to the data
 	// of f's entire archive. See #65499.
 	fh := f.FileHeader
+	if f.IsEncrypted() && f.encryption != StandardEncryption {
+		fh.Method = WinZipAes
+	}
+
 	fw, err := w.CreateRaw(&fh)
 	if err != nil {
 		return err

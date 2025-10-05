@@ -30,8 +30,9 @@ import (
 
 // Compression methods.
 const (
-	Store   uint16 = 0
-	Deflate uint16 = 8
+	Store     uint16 = 0  //归档
+	Deflate   uint16 = 8  //压缩
+	WinZipAes uint16 = 99 //压缩并AES加密
 )
 
 const (
